@@ -184,7 +184,7 @@ func (s *sequenceDecs) decode(seqs int, br *bitReader, hist []byte) error {
 			// Not enough size, will be extremely rarely triggered,
 			// but could be if destination slice is too small for sync operations.
 			// We add maxBlockSize to the capacity.
-			fmt.Println("upping cap to", size)
+			//fmt.Println("upping cap to", size)
 			s.out = append(s.out, make([]byte, size)...)
 			s.out = s.out[:len(s.out)-size]
 		}
