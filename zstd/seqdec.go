@@ -184,9 +184,8 @@ func (s *sequenceDecs) decode(seqs int, br *bitReader, hist []byte) error {
 			// Not enough size, will be extremely rarely triggered,
 			// but could be if destination slice is too small for sync operations.
 			// We add maxBlockSize to the capacity.
-			s.out = append(s.out, make([]byte, maxBlockSize)...)
-			// HMMM
-			// s.out = s.out[:len(s.out)-maxBlockSize]
+			s.out = append(s.out, make([]byte, size)...)
+			s.out = s.out[:len(s.out)-size]
 		}
 		if ml > maxMatchLen {
 			return fmt.Errorf("match len (%d) bigger than max allowed length", ml)
