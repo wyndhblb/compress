@@ -181,11 +181,11 @@ func (s *sequenceDecs) decode(seqs int, br *bitReader, hist []byte) error {
 			return fmt.Errorf("output (%d) bigger than max block size", size)
 		}
 		if size > cap(s.out) {
-			// Not enough size, which can happen under large block streaming conditions
+			// Not enough size, which can happen under high volume block streaming conditions
 			// but could be if destination slice is too small for sync operations.
 			// over-allocating here can create a large amount of GC pressure so we try to keep
 			// it as contained as possible
-			addBytes := size - cap(s.out)
+			addBytes := size - len(s.out)
 			s.out = append(s.out, make([]byte, addBytes)...)
 			s.out = s.out[:len(s.out)-addBytes]
 		}
