@@ -1270,6 +1270,25 @@ func testBetterBlockRoundtrip(t *testing.T, src []byte) {
 		t.Error(err)
 	}
 }
+
+func testBestBlockRoundtrip(t *testing.T, src []byte) {
+	dst := EncodeBest(nil, src)
+	t.Logf("encoded to %d -> %d bytes", len(src), len(dst))
+	decoded, err := Decode(nil, dst)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(decoded) != len(src) {
+		t.Error("decoded len:", len(decoded), "!=", len(src))
+		return
+	}
+	err = cmp(src, decoded)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func testSnappyDecode(t *testing.T, src []byte) {
 	var buf bytes.Buffer
 	enc := snappy.NewBufferedWriter(&buf)
@@ -1301,16 +1320,6 @@ func testSnappyDecode(t *testing.T, src []byte) {
 
 func benchDecode(b *testing.B, src []byte) {
 	encoded := Encode(nil, src)
-	// Bandwidth is in amount of uncompressed data.
-	b.SetBytes(int64(len(src)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Decode(src, encoded)
-	}
-}
-
-func benchDecodeBetter(b *testing.B, src []byte) {
-	encoded := EncodeBetter(nil, src)
 	// Bandwidth is in amount of uncompressed data.
 	b.SetBytes(int64(len(src)))
 	b.ResetTimer()
@@ -1367,10 +1376,8 @@ func expand(src []byte, n int) []byte {
 	return dst
 }
 
-func benchWords(b *testing.B, n int, decode bool) {
-	// Note: the file is OS-language dependent so the resulting values are not
-	// directly comparable for non-US-English OS installations.
-	data := expand(readFile(b, "/usr/share/dict/words"), n)
+func benchTwain(b *testing.B, n int, decode bool) {
+	data := expand(readFile(b, "../testdata/Mark.Twain-Tom.Sawyer.txt"), n)
 	if decode {
 		benchDecode(b, data)
 	} else {
@@ -1378,18 +1385,18 @@ func benchWords(b *testing.B, n int, decode bool) {
 	}
 }
 
-func BenchmarkWordsDecode1e1(b *testing.B) { benchWords(b, 1e1, true) }
-func BenchmarkWordsDecode1e2(b *testing.B) { benchWords(b, 1e2, true) }
-func BenchmarkWordsDecode1e3(b *testing.B) { benchWords(b, 1e3, true) }
-func BenchmarkWordsDecode1e4(b *testing.B) { benchWords(b, 1e4, true) }
-func BenchmarkWordsDecode1e5(b *testing.B) { benchWords(b, 1e5, true) }
-func BenchmarkWordsDecode1e6(b *testing.B) { benchWords(b, 1e6, true) }
-func BenchmarkWordsEncode1e1(b *testing.B) { benchWords(b, 1e1, false) }
-func BenchmarkWordsEncode1e2(b *testing.B) { benchWords(b, 1e2, false) }
-func BenchmarkWordsEncode1e3(b *testing.B) { benchWords(b, 1e3, false) }
-func BenchmarkWordsEncode1e4(b *testing.B) { benchWords(b, 1e4, false) }
-func BenchmarkWordsEncode1e5(b *testing.B) { benchWords(b, 1e5, false) }
-func BenchmarkWordsEncode1e6(b *testing.B) { benchWords(b, 1e6, false) }
+func BenchmarkTwainDecode1e1(b *testing.B) { benchTwain(b, 1e1, true) }
+func BenchmarkTwainDecode1e2(b *testing.B) { benchTwain(b, 1e2, true) }
+func BenchmarkTwainDecode1e3(b *testing.B) { benchTwain(b, 1e3, true) }
+func BenchmarkTwainDecode1e4(b *testing.B) { benchTwain(b, 1e4, true) }
+func BenchmarkTwainDecode1e5(b *testing.B) { benchTwain(b, 1e5, true) }
+func BenchmarkTwainDecode1e6(b *testing.B) { benchTwain(b, 1e6, true) }
+func BenchmarkTwainEncode1e1(b *testing.B) { benchTwain(b, 1e1, false) }
+func BenchmarkTwainEncode1e2(b *testing.B) { benchTwain(b, 1e2, false) }
+func BenchmarkTwainEncode1e3(b *testing.B) { benchTwain(b, 1e3, false) }
+func BenchmarkTwainEncode1e4(b *testing.B) { benchTwain(b, 1e4, false) }
+func BenchmarkTwainEncode1e5(b *testing.B) { benchTwain(b, 1e5, false) }
+func BenchmarkTwainEncode1e6(b *testing.B) { benchTwain(b, 1e6, false) }
 
 func BenchmarkRandomEncodeBlock1MB(b *testing.B) {
 	rng := rand.New(rand.NewSource(1))
@@ -1586,6 +1593,55 @@ func benchFile(b *testing.B, i int, decode bool) {
 			})
 		}
 	})
+	once = sync.Once{}
+
+	b.Run("block-best", func(b *testing.B) {
+		if decode {
+			b.SetBytes(int64(len(data)))
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				encoded := EncodeBest(nil, data)
+				tmp := make([]byte, len(data))
+				once.Do(func() {
+					if testing.Verbose() {
+						b.Log(len(encoded), " -> ", len(data))
+					}
+				})
+				for pb.Next() {
+					var err error
+					tmp, err = Decode(tmp, encoded)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		} else {
+			b.SetBytes(int64(len(data)))
+			b.ResetTimer()
+
+			b.RunParallel(func(pb *testing.PB) {
+				once.Do(func() {
+					if testing.Verbose() {
+						b.Log(len(data), " -> ", len(EncodeBest(nil, data)))
+					}
+				})
+				dst := make([]byte, MaxEncodedLen(len(data)))
+				tmp := make([]byte, len(data))
+				for pb.Next() {
+					res := EncodeBest(dst, data)
+					if len(res) == 0 {
+						panic(0)
+					}
+					if false {
+						tmp, _ = Decode(tmp, res)
+						if !bytes.Equal(tmp, data) {
+							panic("wrong")
+						}
+					}
+				}
+			})
+		}
+	})
 }
 
 func benchFileSnappy(b *testing.B, i int, decode bool) {
@@ -1734,6 +1790,12 @@ func testFile(t *testing.T, i, repeat int) {
 		t.Run("s2-better", func(t *testing.T) {
 			testWriterRoundtrip(t, data, WriterBetterCompression())
 		})
+		t.Run("s2-best", func(t *testing.T) {
+			testWriterRoundtrip(t, data, WriterBestCompression())
+		})
+		t.Run("s2-uncompressed", func(t *testing.T) {
+			testWriterRoundtrip(t, data, WriterUncompressed())
+		})
 		t.Run("block", func(t *testing.T) {
 			d := data
 			testBlockRoundtrip(t, d)
@@ -1756,6 +1818,9 @@ func TestDataRoundtrips(t *testing.T) {
 		t.Run("s2-better", func(t *testing.T) {
 			testWriterRoundtrip(t, data, WriterBetterCompression())
 		})
+		t.Run("s2-best", func(t *testing.T) {
+			testWriterRoundtrip(t, data, WriterBestCompression())
+		})
 		t.Run("block", func(t *testing.T) {
 			d := data
 			testBlockRoundtrip(t, d)
@@ -1763,6 +1828,10 @@ func TestDataRoundtrips(t *testing.T) {
 		t.Run("block-better", func(t *testing.T) {
 			d := data
 			testBetterBlockRoundtrip(t, d)
+		})
+		t.Run("block-best", func(t *testing.T) {
+			d := data
+			testBestBlockRoundtrip(t, d)
 		})
 		t.Run("snappy", func(t *testing.T) {
 			testSnappyDecode(t, data)
